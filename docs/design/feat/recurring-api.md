@@ -9,6 +9,21 @@ flowchart LR
 ```
 Month-based intervals clamp the anchor day to month length (31st -> 28th -> 31st).
 
+## Flow (slice 3: write path)
+```mermaid
+sequenceDiagram
+  participant W as Transaction.save (create)
+  participant S as post_save signal
+  participant R as assign_recurring_group
+  W->>S: created
+  S->>R: tx
+  R->>R: skip if grouped / no merchant or category
+  R->>R: extend matching group (conditional UPDATE on last_date)
+  R->>R: else pair with prior ungrouped tx, create group
+  Note over R: IntegrityError on unique constraint = concurrent twin, skip
+```
+bulk_create bypasses signals; the backfill command (slice 4) covers it.
+
 ## Entities (slice 2)
 ```mermaid
 erDiagram
