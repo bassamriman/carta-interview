@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0005_remove_transaction_memo'),
+        ('accounts', '0006_transaction_keyset_indexes'),
     ]
 
     operations = [

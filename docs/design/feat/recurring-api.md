@@ -51,3 +51,6 @@ Merchant and category may be null (grouped as their own series). Unique constrai
 | Hazard | Where | Status |
 |---|---|---|
 | Base lint is red (13 pre-existing ruff findings); lint gate scoped to changed files | .sdlc/stack.json | deferred, not ours |
+
+## After merging api-perf
+The group transactions endpoint reuses api-perf's cursor helpers and `TransactionPageOut` (one paging contract). Migrations renumbered to 0007 and 0008 on top of `0006_transaction_keyset_indexes`; `Transaction` has a single `Meta` holding all indexes.

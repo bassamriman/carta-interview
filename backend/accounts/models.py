@@ -115,8 +115,13 @@ class Transaction(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        indexes: ClassVar = [models.Index(fields=["recurring_group", "date", "id"])]
-
     def __str__(self) -> str:
         return f"{self.date} {self.merchant} {self.amount}"
+
+    class Meta:
+        indexes: ClassVar = [
+            models.Index(fields=["recurring_group", "date", "id"]),
+            models.Index(fields=["account", "date", "id"], name="txn_acct_date_id"),
+            models.Index(fields=["account", "merchant", "date", "id"], name="txn_acct_merch_date_id"),
+            models.Index(fields=["account", "category", "date", "id"], name="txn_acct_cat_date_id"),
+        ]
