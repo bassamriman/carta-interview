@@ -27,7 +27,7 @@ sequenceDiagram
 ```
 
 ## API
-See backend/docs/transactions-api.md. The response changed from a bare list to an object with items, next_cursor and previous_cursor.
+See backend/docs/transactions-api.md. The response changed from a bare list to an object with items, next_cursor and previous_cursor. The page schema is frozen and items is a tuple.
 
 ## Pitfalls
 | Hazard | Where | Status |

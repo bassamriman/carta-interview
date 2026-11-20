@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from django.db.models import Count, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
+from pydantic import ConfigDict
 from ninja import Query, Router, Schema
 from ninja.errors import HttpError
 
@@ -94,7 +95,9 @@ def list_accounts(request: HttpRequest, user_id: int) -> list[AccountOut]:
 
 
 class TransactionPageOut(Schema):
-    items: list[TransactionOut]
+    model_config = ConfigDict(frozen=True)
+
+    items: tuple[TransactionOut, ...]
     next_cursor: str | None
     previous_cursor: str | None
 
@@ -184,7 +187,7 @@ def list_transactions(
         has_previous, has_next = bool(after), len(rows) > limit
 
     return TransactionPageOut(
-        items=[_to_out(t, account) for t in page],
+        items=tuple(_to_out(t, account) for t in page),
         next_cursor=encode_cursor(page[-1]) if page and has_next else None,
         previous_cursor=encode_cursor(page[0]) if page and has_previous else None,
     )
