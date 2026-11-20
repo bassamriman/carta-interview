@@ -32,5 +32,5 @@ See backend/docs/transactions-api.md. Response changed from list to {items,next_
 | N+1 per row for category/merchant | backend/accounts/api.py list_transactions | fixed, verified (query-count test) |
 | No-match search scanned the whole account (2.0s -> 84ms) | backend/accounts/api.py _rows | fixed, verified on seed DB |
 | Mid-density search can still scan a lot | backend/accounts/api.py _rows | deferred, needs trigram/deadline |
-| Frontend reads bare list | frontend/src/pages/TransactionsPage.tsx:81 | deferred, outside slice, orchestrator told |
+| Frontend read a bare list | frontend/src/pages/TransactionsPage.tsx:81 | fixed minimally (reads `items`); only the first page loads until recurring-ui adds pagination |
 | Search/LIKE on 1B rows, balance aggregates | backend/docs/transactions-api.md | deferred, SQLite scale note |

@@ -78,7 +78,7 @@ export default function TransactionsPage() {
       })
       .then((data) => {
         if (ignore) return;
-        setTransactions(data);
+        setTransactions(data.items);
         setPage(1);
         setLoadedKey(requestKey);
       })
