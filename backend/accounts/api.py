@@ -1,13 +1,15 @@
+import base64
 from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from ninja import Router, Schema
+from ninja import Query, Router, Schema
+from ninja.errors import HttpError
 
-from .models import Account, Transaction
+from .models import Account, RecurringGroup, Transaction
 
 router = Router()
 
@@ -118,3 +120,96 @@ def list_transactions(request: HttpRequest, account_id: int, search: str = "") -
         ]
 
     return result
+
+
+class RecurringGroupOut(Schema):
+    id: int
+    account_id: int
+    merchant: MerchantOut
+    category: CategoryOut
+    amount: Decimal
+    type: str
+    interval: str
+    first_date: date
+    last_date: date
+    count: int
+
+
+class CursorParams(Schema):
+    cursor: str | None = None
+    limit: int = 50
+
+
+class TransactionPage(Schema):
+    items: list[TransactionOut]
+    next_cursor: str | None
+
+
+MAX_PAGE = 200
+
+
+def _encode_cursor(t: Transaction) -> str:
+    return base64.urlsafe_b64encode(f"{t.date.isoformat()}|{t.id}".encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[date, int]:
+    try:
+        raw_date, raw_id = base64.urlsafe_b64decode(cursor.encode()).decode().split("|")
+        return date.fromisoformat(raw_date), int(raw_id)
+    except ValueError as e:
+        raise HttpError(400, "invalid cursor") from e
+
+
+@router.get("/users/{user_id}/recurring-groups", response=list[RecurringGroupOut])
+def list_recurring_groups(request: HttpRequest, user_id: int) -> list[RecurringGroupOut]:
+    user = get_object_or_404(User, id=user_id)
+    groups = (
+        RecurringGroup.objects.filter(account__user=user)
+        .select_related("merchant", "category")
+        .order_by("-last_date", "id")
+    )
+    return [
+        RecurringGroupOut(
+            id=g.id,
+            account_id=g.account_id,  # ty: ignore[unresolved-attribute]
+            merchant=MerchantOut(id=g.merchant.id, name=g.merchant.name),
+            category=CategoryOut(id=g.category.id, name=g.category.name),
+            amount=g.amount,
+            type=g.type,
+            interval=g.interval,
+            first_date=g.first_date,
+            last_date=g.last_date,
+            count=g.count,
+        )
+        for g in groups
+    ]
+
+
+@router.get("/recurring-groups/{group_id}/transactions", response=TransactionPage)
+def list_group_transactions(
+    request: HttpRequest, group_id: int, params: Query[CursorParams]
+) -> TransactionPage:
+    group = get_object_or_404(RecurringGroup.objects.select_related("account"), id=group_id)
+    limit = max(1, min(params.limit, MAX_PAGE))
+    qs = group.transactions.select_related("category", "merchant").order_by("date", "id")
+    if params.cursor:
+        d, last_id = _decode_cursor(params.cursor)
+        qs = qs.filter(Q(date__gt=d) | Q(date=d, id__gt=last_id))
+    rows = list(qs[: limit + 1])
+    page = rows[:limit]
+    acct = group.account
+    return TransactionPage(
+        items=[
+            TransactionOut(
+                id=t.id,
+                date=t.date,
+                amount=t.amount,
+                category=CategoryOut(id=t.category.id, name=t.category.name) if t.category else None,
+                merchant=MerchantOut(id=t.merchant.id, name=t.merchant.name) if t.merchant else None,
+                type=t.type,
+                account=TransactionAccountOut(id=acct.id, name=acct.name, account_type=acct.account_type),
+            )
+            for t in page
+        ],
+        next_cursor=_encode_cursor(page[-1]) if len(rows) > limit else None,
+    )

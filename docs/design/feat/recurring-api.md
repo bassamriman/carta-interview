@@ -24,6 +24,16 @@ sequenceDiagram
 ```
 bulk_create bypasses signals; the backfill command (slice 4) covers it.
 
+## API (slice 5)
+```mermaid
+sequenceDiagram
+  Client->>API: GET /api/users/{id}/recurring-groups
+  API-->>Client: 200 [RecurringGroup] | 404 unknown user
+  Client->>API: GET /api/recurring-groups/{id}/transactions?limit&cursor
+  API-->>Client: 200 {items, next_cursor} | 400 bad cursor | 404
+```
+Cursor: opaque urlsafe-base64 of `date|id`, keyset on (date, id); limit clamped to 1..200 (default 50). next_cursor null on last page.
+
 ## Backfill (slice 4)
 `manage.py backfill_recurring`: for each key with >=2 ungrouped transactions, replays them in date order through `assign_recurring_group`; grouped rows are skipped, so reruns are no-ops.
 
