@@ -49,3 +49,7 @@ docker compose up --build
 ```
 
 The frontend uses pnpm; see [`frontend/README.md`](frontend/README.md) to work on it outside Docker.
+
+## Multiple instances
+
+See [docs/multi-instance.md](docs/multi-instance.md) (`make up INSTANCE=a`).

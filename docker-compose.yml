@@ -1,18 +1,23 @@
+# Run several isolated instances side by side:
+#   COMPOSE_PROJECT_NAME=a BACKEND_PORT=8001 FRONTEND_PORT=5174 podman compose up -d --build
+# See `make up INSTANCE=a` and docs/multi-instance.md. Defaults reproduce the single-instance setup.
 services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
       - /app/.venv
+      - db:/data
     environment:
       - DJANGO_DEBUG=1
+      - DJANGO_DB_PATH=/data/db.sqlite3
 
   frontend:
     build: ./frontend
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -20,3 +25,7 @@ services:
       - VITE_API_TARGET=http://backend:8000
     depends_on:
       - backend
+
+# Per-instance SQLite volume (prefixed by the compose project name), seeded on first start.
+volumes:
+  db:
