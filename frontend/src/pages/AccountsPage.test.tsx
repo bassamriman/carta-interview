@@ -37,6 +37,15 @@ describe("AccountsPage", () => {
     expect(screen.getByRole("link", { name: /back to users/i })).toHaveAttribute("href", "/");
   });
 
+  it("links to the user's recurring transactions", async () => {
+    mockFetch([]);
+    renderPage();
+    expect(await screen.findByRole("link", { name: /recurring transactions/i })).toHaveAttribute(
+      "href",
+      "/users/3/recurring",
+    );
+  });
+
   it("shows an error on HTTP failure", async () => {
     mockFetch(null, false, 404);
     renderPage();

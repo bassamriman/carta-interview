@@ -38,7 +38,13 @@ export default function AccountsPage() {
       <Link to="/" className="text-sm text-blue-600 hover:underline">
         &larr; Back to users
       </Link>
-      <h1 className="text-2xl font-bold mt-4 mb-6">Accounts</h1>
+      <h1 className="text-2xl font-bold mt-4 mb-2">Accounts</h1>
+      <Link
+        to={`/users/${userId}/recurring`}
+        className="inline-block mb-6 text-sm text-blue-600 hover:underline"
+      >
+        Recurring transactions &rarr;
+      </Link>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {accounts.map((account) => (
           <Link

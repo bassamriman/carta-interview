@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import UsersPage from "@/pages/UsersPage";
 import AccountsPage from "@/pages/AccountsPage";
+import RecurringGroupsPage from "@/pages/RecurringGroupsPage";
 import TransactionsPage from "@/pages/TransactionsPage";
 
 function App() {
@@ -8,6 +9,7 @@ function App() {
     <Routes>
       <Route path="/" element={<UsersPage />} />
       <Route path="/users/:userId/accounts" element={<AccountsPage />} />
+      <Route path="/users/:userId/recurring" element={<RecurringGroupsPage />} />
       <Route
         path="/users/:userId/accounts/:accountId/transactions"
         element={<TransactionsPage />}
