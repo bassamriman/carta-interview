@@ -24,6 +24,9 @@ sequenceDiagram
 ```
 bulk_create bypasses signals; the backfill command (slice 4) covers it.
 
+## Backfill (slice 4)
+`manage.py backfill_recurring`: for each key with >=2 ungrouped transactions, replays them in date order through `assign_recurring_group`; grouped rows are skipped, so reruns are no-ops.
+
 ## Entities (slice 2)
 ```mermaid
 erDiagram

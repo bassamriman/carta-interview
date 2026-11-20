@@ -10,7 +10,7 @@ from accounts.factories import (
     MerchantFactory,
     TransactionFactory,
 )
-from accounts.models import RecurringGroup
+from accounts.models import RecurringGroup, Transaction
 
 
 @pytest.mark.django_db
@@ -89,3 +89,23 @@ def test_assignment_is_idempotent(parts) -> None:
 
     group = RecurringGroup.objects.get()
     assert group.count == 2
+
+
+@pytest.mark.django_db
+def test_backfill_idempotent(parts) -> None:
+    from django.core.management import call_command
+
+    a, m, c = parts
+    rows = [
+        Transaction(account=a, merchant=m, category=c, date=d, amount=Decimal("5.00"), type="debit")
+        for d in (date(2026, 1, 1), date(2026, 1, 8), date(2026, 1, 15))
+    ]
+    Transaction.objects.bulk_create(rows)  # bypasses the write-path signal
+    assert RecurringGroup.objects.count() == 0
+
+    call_command("backfill_recurring")
+    call_command("backfill_recurring")
+
+    group = RecurringGroup.objects.get()
+    assert (group.interval, group.count) == ("weekly", 3)
+    assert group.transactions.count() == 3
