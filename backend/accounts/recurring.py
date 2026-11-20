@@ -60,8 +60,8 @@ def _start_group(tx: Transaction) -> None:
 
 
 def assign_recurring_group(tx: Transaction) -> None:
-    """Idempotent: a transaction already in a group, or without merchant/category, is left alone."""
-    if tx.recurring_group_id or tx.merchant_id is None or tx.category_id is None:  # ty: ignore[unresolved-attribute]
+    """Idempotent: a transaction already in a group is left alone."""
+    if tx.recurring_group_id:  # ty: ignore[unresolved-attribute]
         return
     with transaction.atomic():
         for group in RecurringGroup.objects.filter(**_key(tx)).order_by("-last_date"):

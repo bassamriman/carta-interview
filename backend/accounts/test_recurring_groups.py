@@ -109,3 +109,19 @@ def test_backfill_idempotent(parts) -> None:
     group = RecurringGroup.objects.get()
     assert (group.interval, group.count) == ("weekly", 3)
     assert group.transactions.count() == 3
+
+
+@pytest.mark.django_db
+def test_null_merchant_and_category_are_grouped() -> None:
+    account = AccountFactory()
+    for d in (date(2026, 1, 1), date(2026, 1, 8), date(2026, 1, 15)):
+        TransactionFactory(
+            account=account, merchant=None, category=None, date=d, amount=Decimal("3.00"), type="debit"
+        )
+    TransactionFactory(
+        account=account, merchant=MerchantFactory(), category=None, date=date(2026, 1, 22), amount=Decimal("3.00"), type="debit"
+    )
+
+    group = RecurringGroup.objects.get()
+    assert (group.merchant, group.category, group.count) == (None, None, 3)
+    assert group.transactions.count() == 3  # a different merchant is a different series

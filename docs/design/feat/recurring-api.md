@@ -17,7 +17,7 @@ sequenceDiagram
   participant R as assign_recurring_group
   W->>S: created
   S->>R: tx
-  R->>R: skip if grouped / no merchant or category
+  R->>R: skip if already grouped
   R->>R: extend matching group (conditional UPDATE on last_date)
   R->>R: else pair with prior ungrouped tx, create group
   Note over R: IntegrityError on unique constraint = concurrent twin, skip
@@ -28,9 +28,9 @@ bulk_create bypasses signals; the backfill command (slice 4) covers it.
 ```mermaid
 sequenceDiagram
   Client->>API: GET /api/users/{id}/recurring-groups
-  API-->>Client: 200 [RecurringGroup] | 404 unknown user
-  Client->>API: GET /api/recurring-groups/{id}/transactions?limit&after|before
-  API-->>Client: 200 {items, next_cursor, previous_cursor} | 400 bad cursor or both | 404
+  API-->>Client: 200 list of groups, or 404 unknown user
+  Client->>API: GET /api/recurring-groups/{id}/transactions with limit, after or before
+  API-->>Client: 200 page, or 400 bad cursor, or 404
 ```
 Cursor: opaque urlsafe-base64 of `date|id`, keyset on (date, id); limit clamped to 1..200 (default 50). next_cursor null on last page.
 
@@ -45,7 +45,7 @@ erDiagram
   Merchant ||--o{ RecurringGroup : of
   Category ||--o{ RecurringGroup : of
 ```
-Unique constraint on (account, merchant, category, amount, type, interval, anchor_day, first_date) makes concurrent creation of the same group fail loudly instead of duplicating.
+Merchant and category may be null (grouped as their own series). Unique constraint on (account, merchant, category, amount, type, interval, anchor_day, first_date), with NULLs coalesced to 0 makes concurrent creation of the same group fail loudly instead of duplicating.
 
 ## Pitfalls
 | Hazard | Where | Status |

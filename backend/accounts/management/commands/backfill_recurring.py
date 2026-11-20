@@ -15,9 +15,7 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         before = RecurringGroup.objects.count()
         keys = (
-            Transaction.objects.filter(
-                recurring_group__isnull=True, merchant__isnull=False, category__isnull=False
-            )
+            Transaction.objects.filter(recurring_group__isnull=True)
             .values(*KEY)
             .annotate(n=Count("id"))
             .filter(n__gte=2)

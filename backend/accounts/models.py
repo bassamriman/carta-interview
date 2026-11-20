@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib.auth.models import User
 from django.db import models
+from django.db.models.functions import Coalesce
 
 if TYPE_CHECKING:
     from django.db.models.fields.related_descriptors import RelatedManager
@@ -61,8 +62,12 @@ class RecurringGroup(models.Model):
     transactions: "RelatedManager[Transaction]"
 
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="recurring_groups")
-    merchant = models.ForeignKey(Merchant, on_delete=models.CASCADE, related_name="recurring_groups")
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="recurring_groups")
+    merchant = models.ForeignKey(
+        Merchant, on_delete=models.CASCADE, null=True, blank=True, related_name="recurring_groups"
+    )
+    category = models.ForeignKey(
+        Category, on_delete=models.CASCADE, null=True, blank=True, related_name="recurring_groups"
+    )
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     type = models.CharField(max_length=10)
     interval = models.CharField(max_length=10, choices=Interval.choices)
@@ -73,8 +78,16 @@ class RecurringGroup(models.Model):
 
     class Meta:
         constraints: ClassVar = [
+            # NULL merchant/category must still collide, so they are coalesced to 0 (ids start at 1).
             models.UniqueConstraint(
-                fields=["account", "merchant", "category", "amount", "type", "interval", "anchor_day", "first_date"],
+                "account",
+                Coalesce("merchant", 0),
+                Coalesce("category", 0),
+                "amount",
+                "type",
+                "interval",
+                "anchor_day",
+                "first_date",
                 name="uniq_recurring_group",
             )
         ]

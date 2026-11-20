@@ -125,8 +125,8 @@ def list_transactions(request: HttpRequest, account_id: int, search: str = "") -
 class RecurringGroupOut(Schema):
     id: int
     account_id: int
-    merchant: MerchantOut
-    category: CategoryOut
+    merchant: MerchantOut | None
+    category: CategoryOut | None
     amount: Decimal
     type: str
     interval: str
@@ -174,8 +174,8 @@ def list_recurring_groups(request: HttpRequest, user_id: int) -> list[RecurringG
         RecurringGroupOut(
             id=g.id,
             account_id=g.account_id,  # ty: ignore[unresolved-attribute]
-            merchant=MerchantOut(id=g.merchant.id, name=g.merchant.name),
-            category=CategoryOut(id=g.category.id, name=g.category.name),
+            merchant=MerchantOut(id=g.merchant.id, name=g.merchant.name) if g.merchant else None,
+            category=CategoryOut(id=g.category.id, name=g.category.name) if g.category else None,
             amount=g.amount,
             type=g.type,
             interval=g.interval,
