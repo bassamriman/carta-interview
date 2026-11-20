@@ -9,6 +9,16 @@ flowchart LR
 ```
 Month-based intervals clamp the anchor day to month length (31st -> 28th -> 31st).
 
+## Entities (slice 2)
+```mermaid
+erDiagram
+  Account ||--o{ RecurringGroup : has
+  RecurringGroup ||--o{ Transaction : groups
+  Merchant ||--o{ RecurringGroup : of
+  Category ||--o{ RecurringGroup : of
+```
+Unique constraint on (account, merchant, category, amount, type, interval, anchor_day, first_date) makes concurrent creation of the same group fail loudly instead of duplicating.
+
 ## Pitfalls
 | Hazard | Where | Status |
 |---|---|---|

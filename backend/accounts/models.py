@@ -1,7 +1,7 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from django.db import models
 from django.contrib.auth.models import User
+from django.db import models
 
 if TYPE_CHECKING:
     from django.db.models.fields.related_descriptors import RelatedManager
@@ -47,6 +47,40 @@ class Merchant(models.Model):
         return self.name
 
 
+class RecurringGroup(models.Model):
+    """Transactions sharing account, merchant, category, amount and type, on a regular date interval."""
+
+    class Interval(models.TextChoices):
+        WEEKLY = "weekly"
+        BIWEEKLY = "biweekly"
+        MONTHLY = "monthly"
+        QUARTERLY = "quarterly"
+        YEARLY = "yearly"
+
+    id: int
+    transactions: "RelatedManager[Transaction]"
+
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="recurring_groups")
+    merchant = models.ForeignKey(Merchant, on_delete=models.CASCADE, related_name="recurring_groups")
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="recurring_groups")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    type = models.CharField(max_length=10)
+    interval = models.CharField(max_length=10, choices=Interval.choices)
+    anchor_day = models.PositiveSmallIntegerField()
+    first_date = models.DateField()
+    last_date = models.DateField()
+    count = models.PositiveIntegerField()
+
+    class Meta:
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=["account", "merchant", "category", "amount", "type", "interval", "anchor_day", "first_date"],
+                name="uniq_recurring_group",
+            )
+        ]
+        indexes: ClassVar = [models.Index(fields=["account", "last_date"])]
+
+
 class Transaction(models.Model):
     class TransactionType(models.TextChoices):
         DEBIT = "debit"
@@ -63,7 +97,13 @@ class Transaction(models.Model):
         Merchant, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions"
     )
     type = models.CharField(max_length=10, choices=TransactionType.choices)
+    recurring_group = models.ForeignKey(
+        RecurringGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes: ClassVar = [models.Index(fields=["recurring_group", "date", "id"])]
 
     def __str__(self) -> str:
         return f"{self.date} {self.merchant} {self.amount}"
