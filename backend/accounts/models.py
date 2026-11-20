@@ -67,3 +67,10 @@ class Transaction(models.Model):
 
     def __str__(self) -> str:
         return f"{self.date} {self.merchant} {self.amount}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["account", "date", "id"], name="txn_acct_date_id"),
+            models.Index(fields=["account", "merchant", "date", "id"], name="txn_acct_merch_date_id"),
+            models.Index(fields=["account", "category", "date", "id"], name="txn_acct_cat_date_id"),
+        ]

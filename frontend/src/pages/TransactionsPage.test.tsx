@@ -26,12 +26,15 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+// The API returns a cursor page, not a bare list.
+const page = (items: unknown[]) => ({ items, next_cursor: null, previous_cursor: null });
+
 describe("TransactionsPage", () => {
   it("renders rows, total and back link", async () => {
-    const f = mockFetch([tx(1), tx(2, null)]);
+    const f = mockFetch(page([tx(1), tx(2, null)]));
     renderPage();
     await screen.findByText("Shop");
-    expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions");
+    expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions?limit=200");
     expect(screen.getByText("2 total transactions")).toBeInTheDocument();
     expect(screen.getAllByText("$12.50")).toHaveLength(2);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
@@ -43,7 +46,7 @@ describe("TransactionsPage", () => {
   });
 
   it("paginates 20 per page", async () => {
-    mockFetch(Array.from({ length: 45 }, (_, i) => tx(i + 1)));
+    mockFetch(page(Array.from({ length: 45 }, (_, i) => tx(i + 1))));
     renderPage();
     await screen.findByText("Page 1 of 3");
     expect(screen.getAllByRole("row")).toHaveLength(21);
@@ -56,12 +59,12 @@ describe("TransactionsPage", () => {
   });
 
   it("debounces search and refetches with the encoded query", async () => {
-    const f = mockFetch([tx(1)]);
+    const f = mockFetch(page([tx(1)]));
     renderPage();
     await screen.findByText("Shop");
     await userEvent.type(screen.getByPlaceholderText(/search/i), "a&b");
     await waitFor(() =>
-      expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions?search=a%26b"),
+      expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions?limit=200&search=a%26b"),
     );
     expect(f.mock.calls.filter(([u]) => String(u).includes("search="))).toHaveLength(1);
   });
