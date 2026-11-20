@@ -136,13 +136,15 @@ class RecurringGroupOut(Schema):
 
 
 class CursorParams(Schema):
-    cursor: str | None = None
+    after: str | None = None
+    before: str | None = None
     limit: int = 50
 
 
 class TransactionPage(Schema):
     items: list[TransactionOut]
     next_cursor: str | None
+    previous_cursor: str | None
 
 
 MAX_PAGE = 200
@@ -191,12 +193,24 @@ def list_group_transactions(
 ) -> TransactionPage:
     group = get_object_or_404(RecurringGroup.objects.select_related("account"), id=group_id)
     limit = max(1, min(params.limit, MAX_PAGE))
-    qs = group.transactions.select_related("category", "merchant").order_by("date", "id")
-    if params.cursor:
-        d, last_id = _decode_cursor(params.cursor)
-        qs = qs.filter(Q(date__gt=d) | Q(date=d, id__gt=last_id))
-    rows = list(qs[: limit + 1])
-    page = rows[:limit]
+    if params.after and params.before:
+        raise HttpError(400, "after and before are mutually exclusive")
+    qs = group.transactions.select_related("category", "merchant")
+    if params.before:
+        d, last_id = _decode_cursor(params.before)
+        rows = list(qs.filter(Q(date__lt=d) | Q(date=d, id__lt=last_id)).order_by("-date", "-id")[: limit + 1])
+        rows.reverse()
+        has_more_before = len(rows) > limit
+        page = rows[1:] if has_more_before else rows
+        has_next = True
+    else:
+        if params.after:
+            d, last_id = _decode_cursor(params.after)
+            qs = qs.filter(Q(date__gt=d) | Q(date=d, id__gt=last_id))
+        rows = list(qs.order_by("date", "id")[: limit + 1])
+        page = rows[:limit]
+        has_next = len(rows) > limit
+        has_more_before = bool(params.after)
     acct = group.account
     return TransactionPage(
         items=[
@@ -211,5 +225,6 @@ def list_group_transactions(
             )
             for t in page
         ],
-        next_cursor=_encode_cursor(page[-1]) if len(rows) > limit else None,
+        next_cursor=_encode_cursor(page[-1]) if page and has_next else None,
+        previous_cursor=_encode_cursor(page[0]) if page and has_more_before else None,
     )

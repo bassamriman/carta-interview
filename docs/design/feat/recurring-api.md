@@ -29,8 +29,8 @@ bulk_create bypasses signals; the backfill command (slice 4) covers it.
 sequenceDiagram
   Client->>API: GET /api/users/{id}/recurring-groups
   API-->>Client: 200 [RecurringGroup] | 404 unknown user
-  Client->>API: GET /api/recurring-groups/{id}/transactions?limit&cursor
-  API-->>Client: 200 {items, next_cursor} | 400 bad cursor | 404
+  Client->>API: GET /api/recurring-groups/{id}/transactions?limit&after|before
+  API-->>Client: 200 {items, next_cursor, previous_cursor} | 400 bad cursor or both | 404
 ```
 Cursor: opaque urlsafe-base64 of `date|id`, keyset on (date, id); limit clamped to 1..200 (default 50). next_cursor null on last page.
 
