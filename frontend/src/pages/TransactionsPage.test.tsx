@@ -34,7 +34,7 @@ describe("TransactionsPage", () => {
     const f = mockFetch(page([tx(1), tx(2, null)]));
     renderPage();
     await screen.findByText("Shop");
-    expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions");
+    expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions?limit=200");
     expect(screen.getByText("2 total transactions")).toBeInTheDocument();
     expect(screen.getAllByText("$12.50")).toHaveLength(2);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
@@ -64,7 +64,7 @@ describe("TransactionsPage", () => {
     await screen.findByText("Shop");
     await userEvent.type(screen.getByPlaceholderText(/search/i), "a&b");
     await waitFor(() =>
-      expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions?search=a%26b"),
+      expect(f).toHaveBeenCalledWith("/api/accounts/9/transactions?limit=200&search=a%26b"),
     );
     expect(f.mock.calls.filter(([u]) => String(u).includes("search="))).toHaveLength(1);
   });

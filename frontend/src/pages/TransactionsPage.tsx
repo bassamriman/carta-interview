@@ -40,6 +40,28 @@ interface Transaction {
 
 const PAGE_SIZE = 20;
 
+const API_PAGE_SIZE = 200;
+// Interim: the page still pages on the client, so follow the API's cursors up to a cap.
+// A real cursor-driven UI replaces this (recurring-ui).
+const MAX_API_PAGES = 10;
+
+async function fetchAllPages(accountId: string | undefined, search: string): Promise<Transaction[]> {
+  const items: Transaction[] = [];
+  let after: string | null = null;
+  for (let i = 0; i < MAX_API_PAGES; i++) {
+    const params = new URLSearchParams({ limit: String(API_PAGE_SIZE) });
+    if (search) params.set("search", search);
+    if (after) params.set("after", after);
+    const res = await fetch(`/api/accounts/${accountId}/transactions?${params}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    items.push(...body.items);
+    after = body.next_cursor;
+    if (!after) break;
+  }
+  return items;
+}
+
 export default function TransactionsPage() {
   const { userId, accountId } = useParams<{
     userId: string;
@@ -68,17 +90,10 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     let ignore = false;
-    const params = debouncedSearch
-      ? `?search=${encodeURIComponent(debouncedSearch)}`
-      : "";
-    fetch(`/api/accounts/${accountId}/transactions${params}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
+    fetchAllPages(accountId, debouncedSearch)
+      .then((items) => {
         if (ignore) return;
-        setTransactions(data.items);
+        setTransactions(items);
         setPage(1);
         setLoadedKey(requestKey);
       })
