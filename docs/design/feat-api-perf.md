@@ -13,8 +13,12 @@ New indexes on Transaction: (account,date,id), (account,merchant,date,id), (acco
 ```mermaid
 sequenceDiagram
   Client->>API: GET /accounts/{id}/transactions?search&limit&after|before
-  API->>DB: merchant/category ids matching search (small tables)
-  API->>DB: one query, select_related, keyset WHERE (date,id) > cursor, LIMIT n+1
+  API->>DB: merchant/category ids matching search (small tables, capped at 21 each)
+  alt narrow term (<=20 matches)
+    API->>DB: one indexed keyset query per match, LIMIT n+1, merged in Python
+  else broad term or no search
+    API->>DB: one query, select_related, keyset WHERE (date,id) > cursor, LIMIT n+1
+  end
   API-->>Client: items, next_cursor, previous_cursor
   Note over API: bad cursor or both after+before -> 400; unknown account -> 404
 ```
@@ -26,4 +30,7 @@ See backend/docs/transactions-api.md. Response changed from list to {items,next_
 | Hazard | Where | Status |
 |---|---|---|
 | N+1 per row for category/merchant | backend/accounts/api.py list_transactions | fixed, verified (query-count test) |
+| No-match search scanned the whole account (2.0s -> 84ms) | backend/accounts/api.py _rows | fixed, verified on seed DB |
+| Mid-density search can still scan a lot | backend/accounts/api.py _rows | deferred, needs trigram/deadline |
+| Frontend reads bare list | frontend/src/pages/TransactionsPage.tsx:81 | deferred, outside slice, orchestrator told |
 | Search/LIKE on 1B rows, balance aggregates | backend/docs/transactions-api.md | deferred, SQLite scale note |

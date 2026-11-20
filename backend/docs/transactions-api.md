@@ -27,7 +27,7 @@ Order is `(date, id)` ascending. Response (**breaking change**: was a bare list)
 
 ## Scale note: 1B transactions on SQLite
 - Single writer, single file: ~100+ GB database, no horizontal scale; backups and index builds lock or take hours.
-- Keyset paging itself is O(limit) at any depth; the unfiltered account walk is fine.
-- Search is `icontains` on lookup names, so a term matching many merchants becomes a huge `IN` list; unanchored LIKE cannot use an index. Needs full-text/trigram (Postgres pg_trgm, or a search service).
+- Keyset paging without search is O(limit) at any depth; the unfiltered account walk is fine.
+- Search is `icontains` on lookup names (unanchored LIKE cannot use an index, so it scans the small merchant/category tables). A narrow term (<= 20 matching merchants and categories) runs one index-bound keyset query per match and merges them; a broad term falls back to a date-ordered scan with an IN filter. The in-between case (many matches, still sparse in one account) can read a large part of the account's history. Needs full-text/trigram (Postgres pg_trgm, or a search service) and a statement deadline at scale.
 - `users` transaction_count and account `balance` still aggregate over all rows (full scans); need maintained running balances/counters or materialized rollups.
 - Concurrent read/write load, replication and partitioning (by account or date) require Postgres or similar. Not migrated: out of scope per brief.

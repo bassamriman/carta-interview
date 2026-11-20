@@ -333,3 +333,51 @@ def test_query_count_is_constant(client: Client, django_assert_max_num_queries) 
     TransactionFactory.create_batch(20, account=account, merchant=MerchantFactory(), category=CategoryFactory())
     with django_assert_max_num_queries(3):
         assert len(client.get(f"/api/accounts/{account.id}/transactions?limit=20").json()["items"]) == 20
+
+
+@pytest.mark.django_db
+def test_order_is_date_then_id_even_when_ids_disagree(client: Client) -> None:
+    account = AccountFactory()
+    late = TransactionFactory(account=account, date=date(2025, 5, 1))
+    early = TransactionFactory(account=account, date=date(2025, 1, 1))
+    tie = TransactionFactory(account=account, date=date(2025, 5, 1))
+    flat = [i for p in _walk(client, f"/api/accounts/{account.id}/transactions?limit=1") for i in p]
+    assert flat == [early.id, late.id, tie.id]
+
+
+@pytest.mark.django_db
+def test_backward_walk_reverses_forward_walk(client: Client) -> None:
+    account = AccountFactory()
+    TransactionFactory.create_batch(7, account=account)
+    base = f"/api/accounts/{account.id}/transactions?limit=3"
+    forward = _walk(client, base)
+    last = client.get(f"{base}&after={client.get(base).json()['next_cursor']}").json()
+    body = client.get(f"{base}&after={last['next_cursor']}").json()
+    pages = [[t["id"] for t in body["items"]]]
+    while body["previous_cursor"]:
+        body = client.get(f"{base}&before={body['previous_cursor']}").json()
+        pages.append([t["id"] for t in body["items"]])
+    assert pages[::-1] == forward
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("narrow", [True, False])
+def test_search_matches_category_and_excludes_others(client: Client, narrow: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    from accounts import api
+
+    monkeypatch.setattr(api, "NARROW_MATCHES", 20 if narrow else 0)
+    account = AccountFactory()
+    hit = TransactionFactory(account=account, category=CategoryFactory(name="Groceries"), merchant=None)
+    TransactionFactory(account=account, category=CategoryFactory(name="Rent"), merchant=MerchantFactory(name="Landlord"))
+    body = client.get(f"/api/accounts/{account.id}/transactions?search=grocer").json()
+    assert [t["id"] for t in body["items"]] == [hit.id]
+
+
+@pytest.mark.django_db
+def test_empty_account_returns_empty_page(client: Client) -> None:
+    account = AccountFactory()
+    assert client.get(f"/api/accounts/{account.id}/transactions").json() == {
+        "items": [],
+        "next_cursor": None,
+        "previous_cursor": None,
+    }

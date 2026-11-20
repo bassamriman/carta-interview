@@ -1,4 +1,5 @@
 import base64
+from typing import Final
 from datetime import date
 from decimal import Decimal
 
@@ -98,7 +99,8 @@ class TransactionPageOut(Schema):
     previous_cursor: str | None
 
 
-MAX_LIMIT = 200
+MAX_LIMIT: Final = 200
+NARROW_MATCHES: Final = 20
 
 
 def encode_cursor(t: Transaction) -> str:
@@ -125,12 +127,23 @@ def _before(qs: QuerySet[Transaction], key: tuple[date, int]) -> QuerySet[Transa
     return qs.filter(Q(date__lt=day) | Q(date=day, id__lt=pk))
 
 
-def _search(qs: QuerySet[Transaction], term: str) -> QuerySet[Transaction]:
-    # Resolve the small lookup tables first so the transaction scan uses the
-    # (account, merchant|category, date, id) indexes instead of a join + LIKE.
-    merchants = Merchant.objects.filter(name__icontains=term).values("id")
-    categories = Category.objects.filter(name__icontains=term).values("id")
-    return qs.filter(Q(merchant_id__in=merchants) | Q(category_id__in=categories))
+def _rows(qs: QuerySet[Transaction], term: str, *, backward: bool, n: int) -> list[Transaction]:
+    order = ("-date", "-id") if backward else ("date", "id")
+    if not term:
+        return list(qs.order_by(*order)[:n])
+    merchants = Merchant.objects.filter(name__icontains=term)
+    categories = Category.objects.filter(name__icontains=term)
+    merchant_ids = list(merchants.values_list("id", flat=True)[: NARROW_MATCHES + 1])
+    category_ids = list(categories.values_list("id", flat=True)[: NARROW_MATCHES + 1])
+    if len(merchant_ids) > NARROW_MATCHES or len(category_ids) > NARROW_MATCHES:
+        # Broad term: matches are dense, so the date-ordered scan finds n rows quickly.
+        broad = qs.filter(Q(merchant_id__in=merchants.values("id")) | Q(category_id__in=categories.values("id")))
+        return list(broad.order_by(*order)[:n])
+    # Narrow term: one index-bound query per match (account, merchant|category, date, id), merged here.
+    # A scan ordered by date would read the whole account when few rows match.
+    branches = [qs.filter(merchant_id=i) for i in merchant_ids] + [qs.filter(category_id=i) for i in category_ids]
+    unique = {t.id: t for branch in branches for t in branch.order_by(*order)[:n]}
+    return sorted(unique.values(), key=lambda t: (t.date, t.id), reverse=backward)[:n]
 
 
 def _to_out(t: Transaction, account: Account) -> TransactionOut:
@@ -150,7 +163,7 @@ def list_transactions(
     request: HttpRequest,
     account_id: int,
     search: str = "",
-    limit: int = Query(50, ge=1, le=MAX_LIMIT),  # ty: ignore[call-non-callable]
+    limit: int = Query(50, ge=1, le=MAX_LIMIT),  # ty: ignore[call-non-callable]  # ninja Query is an alias ty cannot call
     after: str | None = None,
     before: str | None = None,
 ) -> TransactionPageOut:
@@ -158,17 +171,15 @@ def list_transactions(
         raise HttpError(400, "Pass only one of 'after' and 'before'")
     account = get_object_or_404(Account, id=account_id)
     qs = Transaction.objects.filter(account_id=account_id).select_related("category", "merchant")
-    if search:
-        qs = _search(qs, search)
 
     if before:
-        rows = list(_before(qs, decode_cursor(before)).order_by("-date", "-id")[: limit + 1])
+        rows = _rows(_before(qs, decode_cursor(before)), search, backward=True, n=limit + 1)
         page = rows[:limit][::-1]
         has_previous, has_next = len(rows) > limit, True
     else:
         if after:
             qs = _after(qs, decode_cursor(after))
-        rows = list(qs.order_by("date", "id")[: limit + 1])
+        rows = _rows(qs, search, backward=False, n=limit + 1)
         page = rows[:limit]
         has_previous, has_next = bool(after), len(rows) > limit
 
