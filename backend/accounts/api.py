@@ -1,17 +1,17 @@
 import base64
-from typing import Final
 from datetime import date
 from decimal import Decimal
+from typing import Final
 
 from django.contrib.auth.models import User
 from django.db.models import Count, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from pydantic import ConfigDict
 from ninja import Query, Router, Schema
 from ninja.errors import HttpError
+from pydantic import ConfigDict
 
-from .models import Account, Category, Merchant, Transaction
+from .models import Account, Category, Merchant, RecurringGroup, Transaction
 
 router = Router()
 
@@ -188,6 +188,76 @@ def list_transactions(
 
     return TransactionPageOut(
         items=tuple(_to_out(t, account) for t in page),
+        next_cursor=encode_cursor(page[-1]) if page and has_next else None,
+        previous_cursor=encode_cursor(page[0]) if page and has_previous else None,
+    )
+
+
+class RecurringGroupOut(Schema):
+    id: int
+    account_id: int
+    merchant: MerchantOut | None
+    category: CategoryOut | None
+    amount: Decimal
+    type: str
+    interval: str
+    first_date: date
+    last_date: date
+    count: int
+
+
+@router.get("/users/{user_id}/recurring-groups", response=list[RecurringGroupOut])
+def list_recurring_groups(request: HttpRequest, user_id: int) -> list[RecurringGroupOut]:
+    user = get_object_or_404(User, id=user_id)
+    groups = (
+        RecurringGroup.objects.filter(account__user=user)
+        .select_related("merchant", "category")
+        .order_by("-last_date", "id")
+    )
+    return [
+        RecurringGroupOut(
+            id=g.id,
+            account_id=g.account_id,  # ty: ignore[unresolved-attribute]
+            merchant=MerchantOut(id=g.merchant.id, name=g.merchant.name) if g.merchant else None,
+            category=CategoryOut(id=g.category.id, name=g.category.name) if g.category else None,
+            amount=g.amount,
+            type=g.type,
+            interval=g.interval,
+            first_date=g.first_date,
+            last_date=g.last_date,
+            count=g.count,
+        )
+        for g in groups
+    ]
+
+
+@router.get("/recurring-groups/{group_id}/transactions", response=TransactionPageOut)
+def list_group_transactions(
+    request: HttpRequest,
+    group_id: int,
+    limit: int = Query(50, ge=1, le=MAX_LIMIT),  # ty: ignore[call-non-callable]  # ninja Query is an alias ty cannot call
+    after: str | None = None,
+    before: str | None = None,
+) -> TransactionPageOut:
+    """Same paging contract as the account transactions endpoint, scoped to one recurring group."""
+    if after and before:
+        raise HttpError(400, "Pass only one of 'after' and 'before'")
+    group = get_object_or_404(RecurringGroup.objects.select_related("account"), id=group_id)
+    qs = group.transactions.select_related("category", "merchant")
+
+    if before:
+        rows = _rows(_before(qs, decode_cursor(before)), "", backward=True, n=limit + 1)
+        page = rows[:limit][::-1]
+        has_previous, has_next = len(rows) > limit, True
+    else:
+        if after:
+            qs = _after(qs, decode_cursor(after))
+        rows = _rows(qs, "", backward=False, n=limit + 1)
+        page = rows[:limit]
+        has_previous, has_next = bool(after), len(rows) > limit
+
+    return TransactionPageOut(
+        items=tuple(_to_out(t, group.account) for t in page),
         next_cursor=encode_cursor(page[-1]) if page and has_next else None,
         previous_cursor=encode_cursor(page[0]) if page and has_previous else None,
     )
