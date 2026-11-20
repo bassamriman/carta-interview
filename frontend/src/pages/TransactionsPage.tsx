@@ -40,26 +40,19 @@ interface Transaction {
 
 const PAGE_SIZE = 20;
 
-const API_PAGE_SIZE = 200;
-// Interim: the page still pages on the client, so follow the API's cursors up to a cap.
-// A real cursor-driven UI replaces this (recurring-ui).
-const MAX_API_PAGES = 10;
+interface TransactionPage {
+  items: Transaction[];
+  next_cursor: string | null;
+  previous_cursor: string | null;
+}
 
-async function fetchAllPages(accountId: string | undefined, search: string): Promise<Transaction[]> {
-  const items: Transaction[] = [];
-  let after: string | null = null;
-  for (let i = 0; i < MAX_API_PAGES; i++) {
-    const params = new URLSearchParams({ limit: String(API_PAGE_SIZE) });
-    if (search) params.set("search", search);
-    if (after) params.set("after", after);
-    const res = await fetch(`/api/accounts/${accountId}/transactions?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = await res.json();
-    items.push(...body.items);
-    after = body.next_cursor;
-    if (!after) break;
-  }
-  return items;
+type Cursor = { direction: "after" | "before"; value: string } | null;
+
+function pageUrl(accountId: string | undefined, search: string, cursor: Cursor) {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+  if (search) params.set("search", search);
+  if (cursor) params.set(cursor.direction, cursor.value);
+  return `/api/accounts/${accountId}/transactions?${params}`;
 }
 
 export default function TransactionsPage() {
@@ -67,12 +60,15 @@ export default function TransactionsPage() {
     userId: string;
     accountId: string;
   }>();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [data, setData] = useState<TransactionPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [cursorState, setCursorState] = useState<{ key: string; cursor: Cursor }>({
+    key: "",
+    cursor: null,
+  });
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
@@ -83,19 +79,24 @@ export default function TransactionsPage() {
     };
   }, [search]);
 
-  // Loading is derived from whether the in-flight request's key has resolved,
-  // so we never set state synchronously inside the fetch effect.
-  const requestKey = `${accountId ?? ""}::${debouncedSearch}`;
-  const loading = loadedKey !== requestKey;
+  // A cursor is only valid for the account and search it came from, so it is
+  // dropped (first page) whenever either changes.
+  const walkKey = `${accountId ?? ""}::${debouncedSearch}`;
+  const cursor = cursorState.key === walkKey ? cursorState.cursor : null;
+  const url = pageUrl(accountId, debouncedSearch, cursor);
+  const loading = loadedUrl !== url;
 
   useEffect(() => {
     let ignore = false;
-    fetchAllPages(accountId, debouncedSearch)
-      .then((items) => {
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((page: TransactionPage) => {
         if (ignore) return;
-        setTransactions(items);
-        setPage(1);
-        setLoadedKey(requestKey);
+        setData(page);
+        setLoadedUrl(url);
       })
       .catch((err) => {
         if (!ignore) setError(err.message);
@@ -103,13 +104,14 @@ export default function TransactionsPage() {
     return () => {
       ignore = true;
     };
-  }, [accountId, debouncedSearch, requestKey]);
+  }, [url]);
 
   if (error) return <p className="p-8 text-red-500">Error: {error}</p>;
 
-  const totalPages = Math.ceil(transactions.length / PAGE_SIZE);
-  const start = (page - 1) * PAGE_SIZE;
-  const pageTransactions = transactions.slice(start, start + PAGE_SIZE);
+  const pageTransactions = data?.items ?? [];
+  const go = (direction: "after" | "before", value: string | null) => {
+    if (value) setCursorState({ key: walkKey, cursor: { direction, value } });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -119,10 +121,7 @@ export default function TransactionsPage() {
       >
         &larr; Back to accounts
       </Link>
-      <h1 className="text-2xl font-bold mt-4 mb-2">Transactions</h1>
-      <p className="text-sm text-gray-500 mb-4">
-        {transactions.length} total transactions
-      </p>
+      <h1 className="text-2xl font-bold mt-4 mb-4">Transactions</h1>
       <Input
         type="search"
         placeholder="Search by merchant or category..."
@@ -173,29 +172,24 @@ export default function TransactionsPage() {
         </Table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 mt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-gray-600">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+      <div className="flex items-center justify-center gap-4 mt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={loading || !data?.previous_cursor}
+          onClick={() => go("before", data?.previous_cursor ?? null)}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={loading || !data?.next_cursor}
+          onClick={() => go("after", data?.next_cursor ?? null)}
+        >
+          Next
+        </Button>
+      </div>
     </div>
   );
 }
