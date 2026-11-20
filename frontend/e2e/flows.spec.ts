@@ -52,3 +52,10 @@ test("back links return to previous pages", async ({ page }) => {
   await page.getByRole("link", { name: /Back to users/ }).click();
   await expect(page).toHaveURL(/\/$/);
 });
+
+test("accounts page links to recurring transactions", async ({ page }) => {
+  await page.goto("/users/2/accounts");
+  await page.getByRole("link", { name: /Recurring transactions/ }).click();
+  await expect(page).toHaveURL(/\/users\/2\/recurring$/);
+  await expect(page.getByRole("heading", { name: "Recurring transactions" })).toBeVisible();
+});

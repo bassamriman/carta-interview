@@ -26,3 +26,6 @@ sequenceDiagram
   P->>A: Next: after=next_cursor / Previous: before=previous_cursor
 ```
 Built against the recurring-api PR 5 contract; that branch is not merged into this one.
+
+## Navigation
+Users -> Accounts -> (account) Transactions, and Accounts -> Recurring transactions (/users/ID/recurring).
