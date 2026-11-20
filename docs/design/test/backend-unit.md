@@ -9,3 +9,4 @@ flowchart LR
   T --> X[GET /api/accounts/id/transactions?search=]
 ```
 No entity, state or API changes.
+- Review follow-up: tests-only tweaks.

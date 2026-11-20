@@ -97,10 +97,14 @@ def test_list_users_counts_transactions_across_accounts(client: Client) -> None:
     user = UserFactory()
     TransactionFactory.create_batch(2, account=AccountFactory(user=user))
     TransactionFactory.create_batch(3, account=AccountFactory(user=user))
+    other = UserFactory()
 
     resp = client.get("/api/users")
 
-    assert [u["transaction_count"] for u in resp.json()] == [5]
+    assert {u["id"]: u["transaction_count"] for u in resp.json()} == {
+        user.id: 5,
+        other.id: 0,
+    }
 
 
 @pytest.mark.django_db
@@ -129,7 +133,9 @@ def test_list_accounts_zero_balance_without_transactions(client: Client) -> None
 
 
 @pytest.mark.django_db
-def test_list_accounts_negative_balance_when_debits_exceed_credits(client: Client) -> None:
+def test_list_accounts_negative_balance_when_debits_exceed_credits(
+    client: Client,
+) -> None:
     user = UserFactory()
     account = AccountFactory(user=user)
     TransactionFactory(account=account, amount=Decimal("10.00"), type="credit")
@@ -141,7 +147,7 @@ def test_list_accounts_negative_balance_when_debits_exceed_credits(client: Clien
 
 
 @pytest.mark.django_db
-def test_list_accounts_only_returns_own_accounts_and_fields(client: Client) -> None:
+def test_list_accounts_scoped_to_path_user_with_fields(client: Client) -> None:
     user = UserFactory()
     mine = AccountFactory(user=user, name="Mine", account_type="savings", notes="hello")
     AccountFactory()
@@ -150,6 +156,8 @@ def test_list_accounts_only_returns_own_accounts_and_fields(client: Client) -> N
 
     assert len(data) == 1
     assert data[0]["id"] == mine.id
+    assert data[0]["name"] == "Mine"
+    assert Decimal(data[0]["balance"]) == 0
     assert data[0]["account_type"] == "savings"
     assert data[0]["notes"] == "hello"
 
@@ -159,7 +167,9 @@ def test_list_accounts_balance_ignores_other_accounts(client: Client) -> None:
     user = UserFactory()
     account = AccountFactory(user=user)
     TransactionFactory(account=account, amount=Decimal("100.00"), type="credit")
-    TransactionFactory(account=AccountFactory(user=user), amount=Decimal("40.00"), type="credit")
+    TransactionFactory(
+        account=AccountFactory(user=user), amount=Decimal("40.00"), type="credit"
+    )
 
     data = {a["id"]: a for a in client.get(f"/api/users/{user.id}/accounts").json()}
 
@@ -182,7 +192,9 @@ def test_list_transactions_empty(client: Client) -> None:
 
 
 @pytest.mark.django_db
-def test_list_transactions_ordered_by_date_and_scoped_to_account(client: Client) -> None:
+def test_list_transactions_ordered_by_date_and_scoped_to_account(
+    client: Client,
+) -> None:
     account = AccountFactory()
     TransactionFactory(account=account, date=date(2025, 3, 1))
     TransactionFactory(account=account, date=date(2025, 1, 1))
@@ -199,7 +211,7 @@ def test_list_transactions_shape(client: Client) -> None:
     account = AccountFactory(name="Main", account_type="checking")
     category = CategoryFactory(name="Food")
     merchant = MerchantFactory(name="Deli")
-    TransactionFactory(
+    txn = TransactionFactory(
         account=account,
         category=category,
         merchant=merchant,
@@ -210,11 +222,17 @@ def test_list_transactions_shape(client: Client) -> None:
 
     (item,) = client.get(f"/api/accounts/{account.id}/transactions").json()
 
+    assert item["id"] == txn.id
+    assert item["date"] == "2025-05-05"
     assert Decimal(item["amount"]) == Decimal("12.34")
     assert item["type"] == "debit"
     assert item["category"] == {"id": category.id, "name": "Food"}
     assert item["merchant"] == {"id": merchant.id, "name": "Deli"}
-    assert item["account"] == {"id": account.id, "name": "Main", "account_type": "checking"}
+    assert item["account"] == {
+        "id": account.id,
+        "name": "Main",
+        "account_type": "checking",
+    }
 
 
 @pytest.mark.django_db
@@ -240,13 +258,26 @@ def test_list_transactions_search_by_category_case_insensitive(client: Client) -
 
 
 @pytest.mark.django_db
-def test_list_transactions_search_no_match_and_null_fields(client: Client) -> None:
+def test_list_transactions_search_no_match_returns_empty(client: Client) -> None:
+    account = AccountFactory()
+    TransactionFactory(account=account, merchant=MerchantFactory(name="Shell"))
+
+    assert (
+        client.get(f"/api/accounts/{account.id}/transactions?search=zzz").json() == []
+    )
+
+
+@pytest.mark.django_db
+def test_list_transactions_search_skips_null_merchant_and_category(
+    client: Client,
+) -> None:
     account = AccountFactory()
     TransactionFactory(account=account, category=None, merchant=None)
     TransactionFactory(account=account, merchant=MerchantFactory(name="Shell"))
 
-    assert client.get(f"/api/accounts/{account.id}/transactions?search=zzz").json() == []
-    assert len(client.get(f"/api/accounts/{account.id}/transactions?search=shell").json()) == 1
+    data = client.get(f"/api/accounts/{account.id}/transactions?search=shell").json()
+
+    assert [t["merchant"]["name"] for t in data] == ["Shell"]
 
 
 @pytest.mark.django_db
@@ -254,17 +285,34 @@ def test_list_transactions_empty_search_returns_all(client: Client) -> None:
     account = AccountFactory()
     TransactionFactory.create_batch(3, account=account)
 
-    assert len(client.get(f"/api/accounts/{account.id}/transactions?search=").json()) == 3
+    assert (
+        len(client.get(f"/api/accounts/{account.id}/transactions?search=").json()) == 3
+    )
 
 
 @pytest.mark.django_db
-def test_models_str() -> None:
-    account = AccountFactory(name="Main", account_type="checking")
-    assert str(account) == "Main (checking)"
-    assert str(CategoryFactory(name="Food")) == "Food"
-    merchant = MerchantFactory(name="Deli")
-    assert str(merchant) == "Deli"
-    t = TransactionFactory(
-        account=account, date=date(2025, 1, 2), amount=Decimal("3.00"), merchant=merchant
+def test_account_str() -> None:
+    assert (
+        str(AccountFactory(name="Main", account_type="checking")) == "Main (checking)"
     )
+
+
+@pytest.mark.django_db
+def test_category_str() -> None:
+    assert str(CategoryFactory(name="Food")) == "Food"
+
+
+@pytest.mark.django_db
+def test_merchant_str() -> None:
+    assert str(MerchantFactory(name="Deli")) == "Deli"
+
+
+@pytest.mark.django_db
+def test_transaction_str() -> None:
+    t = TransactionFactory(
+        date=date(2025, 1, 2),
+        amount=Decimal("3.00"),
+        merchant=MerchantFactory(name="Deli"),
+    )
+
     assert str(t) == "2025-01-02 Deli 3.00"
